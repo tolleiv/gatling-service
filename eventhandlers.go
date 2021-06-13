@@ -80,7 +80,7 @@ func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.
 	}
 	err = restoreDefaultConfFiles(tempDir)
 	if err != nil {
-		err = fmt.Errorf("error syncing default conf files for %s.%s.%s: %s", ResourcePrefix, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
+		err = fmt.Errorf("error syncing default conf files for %s.%s.%s: %s", myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
 		if eventErr := sendErroredTestsFinishedEvent(myKeptn, err); eventErr != nil {
 			log.Printf(fmt.Sprintf("Error sending test finished event: %s", eventErr.Error()))
 		}
