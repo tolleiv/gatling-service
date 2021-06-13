@@ -1,13 +1,18 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"log"
-	"time"
-
 	cloudevents "github.com/cloudevents/sdk-go/v2" // make sure to use v2 cloudevents here
-	keptn "github.com/keptn/go-utils/pkg/lib"
+	"github.com/iancoleman/strcase"
 	keptnv2 "github.com/keptn/go-utils/pkg/lib/v0_2_0"
+	"gopkg.in/yaml.v3"
+	"io/ioutil"
+	"log"
+	"net/url"
+	"os"
+	"path"
+	"time"
 )
 
 /**
@@ -15,210 +20,223 @@ import (
 * See https://github.com/keptn/spec/blob/0.8.0-alpha/cloudevents.md for details on the payload
 **/
 
-// GenericLogKeptnCloudEventHandler is a generic handler for Keptn Cloud Events that logs the CloudEvent
-func GenericLogKeptnCloudEventHandler(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data interface{}) error {
-	log.Printf("Handling %s Event: %s", incomingEvent.Type(), incomingEvent.Context.GetID())
-	log.Printf("CloudEvent %T: %v", data, data)
+const (
+	ResourcePrefix = "gatling"
+	ConfFilename   = "gatling.conf.yaml"
+)
 
-	return nil
+// GatlingConf Configuration file type
+type GatlingConf struct {
+	SpecVersion string      `json:"spec_version" yaml:"spec_version"`
+	Workloads   []*Workload `json:"workloads" yaml:"workloads"`
 }
 
-// OldHandleConfigureMonitoringEvent handles old configure-monitoring events
-// TODO: add in your handler code
-func OldHandleConfigureMonitoringEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptn.ConfigureMonitoringEventData) error {
-	log.Printf("Handling old configure-monitoring Event: %s", incomingEvent.Context.GetID())
-
-	return nil
-}
-
-// HandleConfigureMonitoringTriggeredEvent handles configure-monitoring.triggered events
-// TODO: add in your handler code
-func HandleConfigureMonitoringTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.ConfigureMonitoringTriggeredEventData) error {
-	log.Printf("Handling configure-monitoring.triggered Event: %s", incomingEvent.Context.GetID())
-
-	return nil
-}
-
-// HandleDeploymentTriggeredEvent handles deployment.triggered events
-// TODO: add in your handler code
-func HandleDeploymentTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.DeploymentTriggeredEventData) error {
-	log.Printf("Handling deployment.triggered Event: %s", incomingEvent.Context.GetID())
-
-	return nil
+// Workload of Keptn stage
+type Workload struct {
+	TestStrategy string `json:"teststrategy" yaml:"teststrategy"`
+	Simulation   string `json:"simulation" yaml:"simulation"`
 }
 
 // HandleTestTriggeredEvent handles test.triggered events
-// TODO: add in your handler code
 func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.TestTriggeredEventData) error {
 	log.Printf("Handling test.triggered Event: %s", incomingEvent.Context.GetID())
 
-	return nil
-}
-
-// HandleApprovalTriggeredEvent handles approval.triggered events
-// TODO: add in your handler code
-func HandleApprovalTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.ApprovalTriggeredEventData) error {
-	log.Printf("Handling approval.triggered Event: %s", incomingEvent.Context.GetID())
-
-	return nil
-}
-
-// HandleEvaluationTriggeredEvent handles evaluation.triggered events
-// TODO: add in your handler code
-func HandleEvaluationTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.EvaluationTriggeredEventData) error {
-	log.Printf("Handling evaluation.triggered Event: %s", incomingEvent.Context.GetID())
-
-	return nil
-}
-
-// HandleReleaseTriggeredEvent handles release.triggered events
-// TODO: add in your handler code
-func HandleReleaseTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.ReleaseTriggeredEventData) error {
-	log.Printf("Handling release.triggered Event: %s", incomingEvent.Context.GetID())
-
-	return nil
-}
-
-// HandleGetSliTriggeredEvent handles get-sli.triggered events if SLIProvider == keptn-service-template-go
-// This function acts as an example showing how to handle get-sli events by sending .started and .finished events
-// TODO: adapt handler code to your needs
-func HandleGetSliTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.GetSLITriggeredEventData) error {
-	log.Printf("Handling get-sli.triggered Event: %s", incomingEvent.Context.GetID())
-
-	// Step 1 - Do we need to do something?
-	// Lets make sure we are only processing an event that really belongs to our SLI Provider
-	if data.GetSLI.SLIProvider != "keptn-service-template-go" {
-		log.Printf("Not handling get-sli event as it is meant for %s", data.GetSLI.SLIProvider)
-		return nil
-	}
-
-	// Step 2 - Send out a get-sli.started CloudEvent
+	// Send out a migrate.started CloudEvent
 	// The get-sli.started cloud-event is new since Keptn 0.8.0 and is required to be send when the task is started
-	_, err := myKeptn.SendTaskStartedEvent(data, ServiceName)
+	_, err := myKeptn.SendTaskStartedEvent(&keptnv2.EventData{}, ServiceName)
 
 	if err != nil {
-		errMsg := fmt.Sprintf("Failed to send task started CloudEvent (%s), aborting...", err.Error())
-		log.Println(errMsg)
+		log.Printf("Failed to send task started CloudEvent (%s), aborting... \n", err.Error())
 		return err
 	}
 
-	// Step 4 - prep-work
-	// Get any additional input / configuration data
-	// - Labels: get the incoming labels for potential config data and use it to pass more labels on result, e.g: links
-	// - SLI.yaml: if your service uses SLI.yaml to store query definitions for SLIs get that file from Keptn
-	labels := data.Labels
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-	testRunID := labels["testRunId"]
-
-	// Step 5 - get SLI Config File
-	// Get SLI File from keptn-service-template-go subdirectory of the config repo - to add the file use:
-	//   keptn add-resource --project=PROJECT --stage=STAGE --service=SERVICE --resource=my-sli-config.yaml  --resourceUri=keptn-service-template-go/sli.yaml
-	sliFile := "keptn-service-template-go/sli.yaml"
-	sliConfigFileContent, err := myKeptn.GetKeptnResource(sliFile)
-
-	// FYI you do not need to "fail" if sli.yaml is missing, you can also assume smart defaults like we do
-	// in keptn-contrib/dynatrace-service and keptn-contrib/prometheus-service
+	serviceURL, err := getServiceURL(data)
 	if err != nil {
-		// failed to fetch sli config file
-		errMsg := fmt.Sprintf("Failed to fetch SLI file %s from config repo: %s", sliFile, err.Error())
-		log.Println(errMsg)
-		// send a get-sli.finished event with status=error and result=failed back to Keptn
-
-		_, err = myKeptn.SendTaskFinishedEvent(&keptnv2.EventData{
-			Status: keptnv2.StatusErrored,
-			Result: keptnv2.ResultFailed,
-		}, ServiceName)
-
-		return err
-	}
-
-	fmt.Println(sliConfigFileContent)
-
-	// Step 6 - do your work - iterate through the list of requested indicators and return their values
-	// Indicators: this is the list of indicators as requested in the SLO.yaml
-	// SLIResult: this is the array that will receive the results
-	indicators := data.GetSLI.Indicators
-	sliResults := []*keptnv2.SLIResult{}
-
-	for _, indicatorName := range indicators {
-		sliResult := &keptnv2.SLIResult{
-			Metric: indicatorName,
-			Value:  123.4, // ToDo: Fetch the values from your monitoring tool here
+		if eventErr := sendErroredTestsFinishedEvent(myKeptn, err); eventErr != nil {
+			log.Printf(fmt.Sprintf("Error sending test finished event: %s", eventErr.Error()))
 		}
-		sliResults = append(sliResults, sliResult)
+		return err
 	}
 
-	// Step 7 - add additional context via labels (e.g., a backlink to the monitoring or CI tool)
-	labels["Link to Data Source"] = "https://mydatasource/myquery?testRun=" + testRunID
-
-	// Step 8 - Build get-sli.finished event data
-	getSliFinishedEventData := &keptnv2.GetSLIFinishedEventData{
-		EventData: keptnv2.EventData{
-			Status: keptnv2.StatusSucceeded,
-			Result: keptnv2.ResultPass,
-		},
-		GetSLI: keptnv2.GetSLIFinished{
-			IndicatorValues: sliResults,
-			Start:           data.GetSLI.Start,
-			End:             data.GetSLI.End,
-		},
+	// create a tempdir
+	tempDir, err := ioutil.TempDir("", ResourcePrefix)
+	if err != nil {
+		if eventErr := sendErroredTestsFinishedEvent(myKeptn, err); eventErr != nil {
+			log.Printf(fmt.Sprintf("Error sending test finished event: %s", eventErr.Error()))
+		}
+		return err
 	}
 
-	_, err = myKeptn.SendTaskFinishedEvent(getSliFinishedEventData, ServiceName)
+	// cleanup afterwards
+	defer os.RemoveAll(tempDir)
+
+	err = getAllGatlingResources(myKeptn, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), tempDir)
+	if err != nil {
+		err = fmt.Errorf("error loading %s/* files for %s.%s.%s: %s", ResourcePrefix, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
+		if eventErr := sendErroredTestsFinishedEvent(myKeptn, err); eventErr != nil {
+			log.Printf(fmt.Sprintf("Error sending test finished event: %s", eventErr.Error()))
+		}
+		return err
+	}
+	err = restoreDefaultConfFiles(tempDir)
+	if err != nil {
+		err = fmt.Errorf("error syncing default conf files for %s.%s.%s: %s", ResourcePrefix, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
+		if eventErr := sendErroredTestsFinishedEvent(myKeptn, err); eventErr != nil {
+			log.Printf(fmt.Sprintf("Error sending test finished event: %s", eventErr.Error()))
+		}
+		return err
+	}
+	var conf *GatlingConf
+	conf, err = getGatlingConf(myKeptn, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService())
 
 	if err != nil {
-		errMsg := fmt.Sprintf("Failed to send task finished CloudEvent (%s), aborting...", err.Error())
-		log.Println(errMsg)
+		log.Printf("Failed to load Configuration file: %s", err.Error())
+	}
+
+	var simulation = fmt.Sprintf("%sSimulation", strcase.ToCamel(data.Test.TestStrategy))
+	if conf != nil {
+		for _, workload := range conf.Workloads {
+			if workload.TestStrategy == data.Test.TestStrategy {
+				if workload.Simulation != "" {
+					simulation = workload.Simulation
+				}
+			}
+		}
+	}
+
+	log.Printf("TestStrategy=%s -> simulation=%s -> serviceUrl=%s\n", data.Test.TestStrategy, simulation, serviceURL.String())
+
+	// CAPTURE START TIME
+	startTime := time.Now()
+
+	// -> https://github.com/keptn/keptn/blob/069dd0f5c7b6f37a3737f4c0c9c7cf07a801b039/jmeter-service/jmeterUtils.go#L184
+	command := []string{
+		fmt.Sprintf("--simulation=%s", simulation),
+	}
+
+	log.Println("Prepare environment")
+
+	environment := os.Environ()
+	environment = append(environment, fmt.Sprintf("GATLING_HOME=%s", tempDir))
+	environment = append(environment, fmt.Sprintf("JAVA_OPTS=-DserviceURL=%s", serviceURL.String()))
+	log.Println("Running gatling tests")
+	str, err := ExecuteCommandWithEnv("gatling.sh", command, environment)
+
+	log.Println("Finished running gatling tests")
+	log.Println(str)
+
+	if err != nil {
+		if eventErr := sendErroredTestsFinishedEvent(myKeptn, err); eventErr != nil {
+			log.Printf(fmt.Sprintf("Error sending test finished event: %s", eventErr.Error()))
+		}
+		return err
+	}
+
+	endTime := time.Now()
+	// Done
+
+	finishedEvent := &keptnv2.TestFinishedEventData{
+		Test: keptnv2.TestFinishedDetails{
+			Start: startTime.Format(time.RFC3339),
+			End:   endTime.Format(time.RFC3339),
+		},
+		EventData: keptnv2.EventData{
+			Result:  keptnv2.ResultPass,
+			Status:  keptnv2.StatusSucceeded,
+			Message: "Gatling test finished successfully",
+		},
+	}
+
+	// Finally: send out a test.finished CloudEvent
+	_, err = myKeptn.SendTaskFinishedEvent(finishedEvent, ServiceName)
+
+	if err != nil {
+		log.Printf("Failed to send task finished CloudEvent (%s), aborting...\n", err.Error())
 		return err
 	}
 
 	return nil
 }
 
-// HandleProblemEvent handles two problem events:
-// - ProblemOpenEventType = "sh.keptn.event.problem.open"
-// - ProblemEventType = "sh.keptn.events.problem"
-// TODO: add in your handler code
-func HandleProblemEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptn.ProblemEventData) error {
-	log.Printf("Handling Problem Event: %s", incomingEvent.Context.GetID())
+// Loads gatling.conf.yaml for the current service
+func getGatlingConf(myKeptn *keptnv2.Keptn, project string, stage string, service string) (*GatlingConf, error) {
+	var err error
 
-	// Deprecated since Keptn 0.7.0 - use the HandleActionTriggeredEvent instead
+	confFile := path.Join(ResourcePrefix, ConfFilename)
+	log.Printf("Loading %s for %s.%s.%s", confFile, project, stage, service)
 
-	return nil
+	keptnResourceContent, err := myKeptn.GetKeptnResource(confFile)
+
+	if err != nil {
+		logMessage := fmt.Sprintf("error when trying to load %s file for service %s on stage %s or project-level %s: %s", confFile, service, stage, project, err.Error())
+		return nil, errors.New(logMessage)
+	}
+	if len(keptnResourceContent) == 0 {
+		// if no configuration file is available, this is not an error, as the service will proceed with the default workload
+		log.Printf("no %s found", confFile)
+		return nil, nil
+	}
+
+	var gatlingConf *GatlingConf
+	gatlingConf, err = parseGatlingConf(keptnResourceContent)
+	if err != nil {
+		logMessage := fmt.Sprintf("Couldn't parse %s file found for service %s in stage %s in project %s. Error: %s", confFile, service, stage, project, err.Error())
+		return nil, errors.New(logMessage)
+	}
+
+	log.Printf("Successfully loaded %s with %d workloads", ConfFilename, len(gatlingConf.Workloads))
+
+	return gatlingConf, nil
 }
 
-// HandleActionTriggeredEvent handles action.triggered events
-// TODO: add in your handler code
-func HandleActionTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.ActionTriggeredEventData) error {
-	log.Printf("Handling Action Triggered Event: %s", incomingEvent.Context.GetID())
-	log.Printf("Action=%s\n", data.Action.Action)
+// parses content and maps it to the GatlingConf struct
+func parseGatlingConf(input []byte) (*GatlingConf, error) {
+	gatlingconf := &GatlingConf{}
+	err := yaml.Unmarshal(input, &gatlingconf)
+	if err != nil {
+		return nil, err
+	}
+	return gatlingconf, nil
+}
 
-	// check if action is supported
-	if data.Action.Action == "action-xyz" {
-		// -----------------------------------------------------
-		// 1. Send Action.Started Cloud-Event
-		// -----------------------------------------------------
-		myKeptn.SendTaskStartedEvent(data, ServiceName)
+//
+// returns the service URL that is either passed via the DeploymentURI* parameters or constructs one based on keptn naming structure
+//
+func getServiceURL(data *keptnv2.TestTriggeredEventData) (*url.URL, error) {
+	if len(data.Deployment.DeploymentURIsLocal) > 0 && data.Deployment.DeploymentURIsLocal[0] != "" {
+		return url.Parse(data.Deployment.DeploymentURIsLocal[0])
 
-		// -----------------------------------------------------
-		// 2. Implement your remediation action here
-		// -----------------------------------------------------
-		time.Sleep(5 * time.Second) // Example: Wait 5 seconds. Maybe the problem fixes itself.
+	} else if len(data.Deployment.DeploymentURIsPublic) > 0 && data.Deployment.DeploymentURIsPublic[0] != "" {
+		return url.Parse(data.Deployment.DeploymentURIsPublic[0])
+	}
 
-		// -----------------------------------------------------
-		// 3. Send Action.Finished Cloud-Event
-		// -----------------------------------------------------
-		myKeptn.SendTaskFinishedEvent(&keptnv2.EventData{
-			Status:  keptnv2.StatusSucceeded, // alternative: keptnv2.StatusErrored
-			Result:  keptnv2.ResultPass,      // alternative: keptnv2.ResultFailed
-			Message: "Successfully sleeped!",
-		}, ServiceName)
+	return nil, errors.New("no deployment URI included in event")
+}
 
-	} else {
-		log.Printf("Retrieved unknown action %s, skipping...", data.Action.Action)
-		return nil
+func sendErroredTestsFinishedEvent(myKeptn *keptnv2.Keptn, err error) error {
+	// report error
+	log.Print(err)
+	// send out a test.finished failed CloudEvent
+	_, err = myKeptn.SendTaskFinishedEvent(&keptnv2.EventData{
+		Status:  keptnv2.StatusErrored,
+		Result:  keptnv2.ResultFailed,
+		Message: err.Error(),
+	}, ServiceName)
+	return err
+}
+
+func restoreDefaultConfFiles(tempDir string) error {
+	targetConf := path.Join([]string{tempDir, "conf"}...)
+	err := os.MkdirAll(targetConf, 700)
+	if err != nil {
+		return err
+	}
+	for _, file := range []string{"logback.xml", "gatling.conf", "gatling-akka.conf"} {
+		sourceConf := path.Join([]string{"opt", "gatling", "conf", file}...)
+		_, err = ExecuteCommandWithEnv("cp", []string{"-u", sourceConf, targetConf}, []string{})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

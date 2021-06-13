@@ -1,20 +1,20 @@
 
-keptn-service-template-go
+gatling-service
 ===========
 
-Helm Chart for the keptn keptn-service-template-go
+Helm Chart for the keptn gatling-service
 
 
 ## Configuration
 
-The following table lists the configurable parameters of the keptn-service-template-go chart and their default values.
+The following table lists the configurable parameters of the gatling-service chart and their default values.
 
 | Parameter                | Description             | Default        |
 | ------------------------ | ----------------------- | -------------- |
-| `keptnservice.image.repository` | Container image name | `"docker.io/keptnsandbox/keptn-service-template-go"` |
+| `keptnservice.image.repository` | Container image name | `"docker.io/keptnsandbox/gatling-service"` |
 | `keptnservice.image.pullPolicy` | Kubernetes image pull policy | `"IfNotPresent"` |
 | `keptnservice.image.tag` | Container tag | `""` |
-| `keptnservice.service.enabled` | Creates a kubernetes service for the keptn-service-template-go | `true` |
+| `keptnservice.service.enabled` | Creates a kubernetes service for the gatling-service | `true` |
 | `distributor.stageFilter` | Sets the stage this helm service belongs to | `""` |
 | `distributor.serviceFilter` | Sets the service this helm service belongs to | `""` |
 | `distributor.projectFilter` | Sets the project this helm service belongs to | `""` |

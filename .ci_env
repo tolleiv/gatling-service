@@ -1,2 +1,2 @@
-DOCKER_ORGANIZATION="keptnsandbox"
-IMAGE="keptn-service-template-go"
+DOCKER_ORGANIZATION="tolleiv"
+IMAGE="gatling-service"

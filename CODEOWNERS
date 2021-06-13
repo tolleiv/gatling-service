@@ -3,8 +3,4 @@
 # Lists the owners of this project
 #
 ##############################################################
-#
-# Learn about CODEOWNERS file format:
-#  https://help.github.com/en/articles/about-code-owners
-#
-
+*	@jetzlstorfer @christian-kreuzberger-dtx @adriangonciarz @tolleiv
