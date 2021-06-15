@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/iancoleman/strcase"
 	keptnv2 "github.com/keptn/go-utils/pkg/lib/v0_2_0"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path"
 )
@@ -24,6 +24,7 @@ type Workload struct {
 // parseGatlingConf parses config file content and maps it to the GatlingConf struct
 func parseGatlingConf(input []byte) (*GatlingConf, error) {
 	gatlingconf := &GatlingConf{}
+
 	err := yaml.Unmarshal(input, &gatlingconf)
 	if err != nil {
 		return nil, err
