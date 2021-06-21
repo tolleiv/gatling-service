@@ -15,7 +15,7 @@ spec:
       labels:
         run: gatling-service
         app.kubernetes.io/name: gatling-service
-        app.kubernetes.io/version: 0.0.2
+        app.kubernetes.io/version: 0.1.0
     spec:
       containers:
         - name: gatling-service
