@@ -15,11 +15,11 @@ spec:
       labels:
         run: gatling-service
         app.kubernetes.io/name: gatling-service
-        app.kubernetes.io/version: 0.1.0
+        app.kubernetes.io/version: 0.1.2
     spec:
       containers:
         - name: gatling-service
-          image: tolleiv/gatling-service:v0.0.14
+          image: tolleiv/gatling-service:0.1.2
           ports:
             - containerPort: 8080
           env:
