@@ -15,6 +15,9 @@ spec:
       labels:
         run: gatling-service
         app.kubernetes.io/name: gatling-service
+        app.kubernetes.io/instance: keptn
+        app.kubernetes.io/part-of: keptn
+        app.kubernetes.io/component: execution-plane
         app.kubernetes.io/version: 0.1.2
     spec:
       containers:
