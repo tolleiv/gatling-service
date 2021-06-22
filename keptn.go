@@ -44,26 +44,28 @@ func getGatlingConf(myKeptn *keptnv2.Keptn, project string, stage string, servic
 }
 
 // getAllGatlingResources copy all service specific files to our local environment
-func getAllGatlingResources(myKeptn *keptnv2.Keptn, project string, stage string, service string, tempDir string) error {
+func getAllGatlingResources(myKeptn *keptnv2.Keptn, project string, stage string, service string, tempDir string) (int, error) {
 	resources, err := myKeptn.ResourceHandler.GetAllServiceResources(project, stage, service)
 
 	if err != nil {
 		log.Warnf("Error getting gatling files: %s", err.Error())
-		return err
+		return 0, err
 	}
 
+	downloaded := 0
 	for _, resource := range resources {
 		if strings.Contains(*resource.ResourceURI, "gatling/") {
 			log.Infof("Found file: %s", *resource.ResourceURI)
 			_, err := getKeptnResource(myKeptn, *resource.ResourceURI, tempDir)
 
 			if err != nil {
-				return err
+				return 0, err
 			}
+			downloaded++
 		}
 	}
 
-	return nil
+	return downloaded, nil
 }
 
 // getKeptnResource fetches a resource from Keptn config repo and stores it in a temp directory
