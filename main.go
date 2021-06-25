@@ -111,7 +111,7 @@ func processKeptnCloudEvent(ctx context.Context, event cloudevents.Event) error 
 		eventData := &keptnv2.TestTriggeredEventData{}
 		parseKeptnCloudEventPayload(event, eventData)
 
-		return HandleTestTriggeredEvent(myKeptn, event, eventData)
+		return HandleTestTriggeredEvent(myKeptn, ScriptGatlingExecutionHandler, event, eventData)
 	}
 
 	// Unknown Event -> Throw Error!

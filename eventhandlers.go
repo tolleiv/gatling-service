@@ -21,7 +21,7 @@ const (
 )
 
 // HandleTestTriggeredEvent handles test.triggered events
-func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.TestTriggeredEventData) error {
+func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, executionHandler GatlingExecutionHandler, incomingEvent cloudevents.Event, data *keptnv2.TestTriggeredEventData) error {
 	log.Infof("Handling test.triggered Event: %s", incomingEvent.Context.GetID())
 
 	// Send out a test.started CloudEvent
@@ -39,8 +39,13 @@ func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.
 		return erroredTestsFinishedEvent(myKeptn, err)
 	}
 
+	tempDirPrefix := ""
+	if myKeptn.UseLocalFileSystem {
+		tempDirPrefix = "./test-tmp/"
+	}
+
 	// create a tempdir
-	tempDir, err := ioutil.TempDir("", ResourcePrefix)
+	tempDir, err := ioutil.TempDir(tempDirPrefix, ResourcePrefix)
 	if err != nil {
 		return erroredTestsFinishedEvent(myKeptn, err)
 	}
@@ -59,7 +64,12 @@ func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.
 		return sendSuccessfulTestFinishedEvent(myKeptn, startTime, "skipped")
 	}
 
-	err = restoreDefaultConfFiles(tempDir)
+	defaultConfRootDir := string(os.PathSeparator)
+	if myKeptn.UseLocalFileSystem {
+		defaultConfRootDir = "test-data"
+	}
+
+	err = restoreDefaultConfFiles(defaultConfRootDir, tempDir)
 	if err != nil {
 		err = fmt.Errorf("error syncing default conf files for %s.%s.%s: %s", myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
 		return erroredTestsFinishedEvent(myKeptn, err)
@@ -83,7 +93,7 @@ func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.
 	environment = append(environment, fmt.Sprintf("GATLING_HOME=%s", tempDir))
 	environment = append(environment, fmt.Sprintf("JAVA_OPTS=-DserviceURL=%s", serviceURL.String()))
 	log.Info("Running gatling tests")
-	str, err := ExecuteCommandWithEnv("gatling.sh", command, environment)
+	str, err := executionHandler(command, environment)
 
 	log.Infof("Finished running gatling tests")
 	log.Infof(str)

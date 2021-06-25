@@ -83,7 +83,7 @@ func getKeptnResource(myKeptn *keptnv2.Keptn, resourceName string, tempDir strin
 	targetFileName := path.Join(fullPathParts...)
 	targetDirname := path.Dir(targetFileName)
 
-	err = os.MkdirAll(targetDirname, 700)
+	err = os.MkdirAll(targetDirname, 0700)
 	if err != nil {
 		log.Errorf("Failed to create tempfolder: %s\n", err.Error())
 		return "", err

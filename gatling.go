@@ -5,6 +5,7 @@ import (
 	"github.com/iancoleman/strcase"
 	keptnv2 "github.com/keptn/go-utils/pkg/lib/v0_2_0"
 	"gopkg.in/yaml.v3"
+	"io"
 	"os"
 	"path"
 )
@@ -50,18 +51,43 @@ func determineSimulationName(data *keptnv2.TestTriggeredEventData, conf *Gatling
 
 // restoreDefaultConfFiles will copy the default gatling config files to the temp directory
 // in case they're missing in the resource files
-func restoreDefaultConfFiles(tempDir string) error {
+func restoreDefaultConfFiles(rootDir, tempDir string) error {
 	targetConf := path.Join([]string{tempDir, "conf"}...)
-	err := os.MkdirAll(targetConf, 700)
+	err := os.MkdirAll(targetConf, 0700)
 	if err != nil {
 		return err
 	}
 	for _, file := range []string{"logback.xml", "gatling.conf", "gatling-akka.conf"} {
-		sourceConf := path.Join([]string{"opt", "gatling", "conf", file}...)
-		_, err = ExecuteCommandWithEnv("cp", []string{"-u", sourceConf, targetConf}, []string{})
+		sourceConfFile := path.Join([]string{rootDir, "opt", "gatling", "conf", file}...)
+		targetConfFile := path.Join([]string{targetConf, file}...)
+
+		if _, err := os.Stat(targetConfFile); err == nil {
+			// file exists
+			continue
+		}
+		srcFile, err := os.Open(sourceConfFile)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		destFile, err := os.Create(targetConfFile) // creates if file doesn't exist
+		if err != nil {
+			return err
+		}
+		defer destFile.Close()
+
+		_, err = io.Copy(destFile, srcFile)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+type GatlingExecutionHandler func(args []string, env []string) (string, error)
+
+func ScriptGatlingExecutionHandler(args []string, env []string) (string, error) {
+	return ExecuteCommandWithEnv("gatling.sh", args, env)
+}
+

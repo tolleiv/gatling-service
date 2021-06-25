@@ -13,10 +13,10 @@
         "http://helloservice.pod-tato-head-hardening:80"
       ],
       "deploymentURIsPublic": [
-        "http://helloservice.pod-tato-head-hardening.svc.cluster.local:80"
+        "http://helloservice.pod-tato-head-hardening.cybersecurity.aoe.host:80"
       ],
       "deploymentstrategy": "duplicate",
-      "gitCommit": "100b5524d1f25ccbc73e90085d997dfeaad33d86"
+      "gitCommit": "a6a97648be5668a7e01d14a0c41b50d5f317db76"
     },
     "message": "",
     "project": "pod-tato-head",
@@ -25,14 +25,14 @@
     "stage": "hardening",
     "status": "succeeded",
     "test": {
-      "teststrategy": "performance"
+      "teststrategy": "some"
     }
   },
-  "id": "cd7fc057-f328-4953-9d0e-50874d9da50c",
+  "id": "a3ec6695-3d11-460b-869a-7d88e2df6314",
   "source": "shipyard-controller",
   "specversion": "1.0",
-  "time": "2021-06-13T20:01:48.917Z",
+  "time": "2021-06-22T20:02:13.884Z",
   "type": "sh.keptn.event.test.triggered",
-  "shkeptncontext": "ca05a848-ba03-4623-953e-2969919efc20",
+  "shkeptncontext": "932ebf71-1f7b-46cd-9f3c-521ff969e321",
   "shkeptnspecversion": "0.2.1"
 }
