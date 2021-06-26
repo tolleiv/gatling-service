@@ -96,6 +96,27 @@ func assetStartedAndFinishedEvents(t *testing.T, gotEvents int, myKeptn *keptnv2
 }
 
 func TestHandleTestTriggeredEvent(t *testing.T) {
+
+	// prepare fixtures
+	contentUriSimple := "gatling/user-files/simulations/SomeSimulation.scala"
+	resourcesSimple := []*keptnapimodels.Resource{
+		{
+			ResourceURI: &contentUriSimple,
+		},
+	}
+	resourcesEmpty := []*keptnapimodels.Resource{}
+	contentUriWithConfig := "gatling/user-files/simulations/PerformanceSimulation.scala"
+	configUriWithConfig := "gatling/gatling.conf.yaml"
+	resourcesWithConfig := []*keptnapimodels.Resource{
+		{
+			ResourceURI: &contentUriWithConfig,
+		},
+		{
+			ResourceURI: &configUriWithConfig,
+		},
+	}
+
+	// tests cases
 	type test struct {
 		name               string
 		inputFile          string
@@ -105,16 +126,13 @@ func TestHandleTestTriggeredEvent(t *testing.T) {
 		expectedResult     keptnv2.ResultType
 		expectedMessage    string
 	}
-	contentUriSimple := "gatling/user-files/simulations/SomeSimulation.scala"
-	contentUriWithConfig := "gatling/user-files/simulations/PerformanceSimulation.scala"
-	configUriWithConfig := "gatling/gatling.conf.yaml"
 
 	tests := []test{
 		{
 			"Skip if config is missing",
 			"test-events/test.triggered.json",
 			"test-data/simple/",
-			[]*keptnapimodels.Resource{},
+			resourcesEmpty,
 			nil,
 			keptnv2.ResultPass,
 			"Gatling test skipped",
@@ -123,7 +141,7 @@ func TestHandleTestTriggeredEvent(t *testing.T) {
 			"Fail when deploymentUri is missing",
 			"test-events/test.triggered.no-uris.json",
 			"test-data/simple/",
-			[]*keptnapimodels.Resource{},
+			resourcesEmpty,
 			nil,
 			keptnv2.ResultFailed,
 			"no deployment URI included in event",
@@ -132,11 +150,7 @@ func TestHandleTestTriggeredEvent(t *testing.T) {
 			"Fail if execution doesn't succeed",
 			"test-events/test.triggered.json",
 			"test-data/simple/",
-			[]*keptnapimodels.Resource{
-				{
-					ResourceURI: &contentUriSimple,
-				},
-			},
+			resourcesSimple,
 			func(args []string, env []string) (string, error) {
 				return "", errors.New("execution failed")
 			},
@@ -147,11 +161,7 @@ func TestHandleTestTriggeredEvent(t *testing.T) {
 			"Successful test run - simple",
 			"test-events/test.triggered.json",
 			"test-data/simple/",
-			[]*keptnapimodels.Resource{
-				{
-					ResourceURI: &contentUriSimple,
-				},
-			},
+			resourcesSimple,
 			func(args []string, env []string) (string, error) {
 				if len(args) != 1 {
 					t.Errorf("Unexpected execution arguments")
@@ -170,14 +180,7 @@ func TestHandleTestTriggeredEvent(t *testing.T) {
 			"Successful test run - with config",
 			"test-events/test.triggered.json",
 			"test-data/with-configuration/",
-			[]*keptnapimodels.Resource{
-				{
-					ResourceURI: &contentUriWithConfig,
-				},
-				{
-					ResourceURI: &configUriWithConfig,
-				},
-			},
+			resourcesWithConfig,
 			func(args []string, env []string) (string, error) {
 				if len(args) != 1 {
 					t.Errorf("Unexpected execution arguments")
