@@ -225,13 +225,14 @@ func TestHandleTestTriggeredEvent(t *testing.T) {
 				executionHandler = testCase.executionHandler
 			}
 
-			g := Gatling{
+			g := EventHandler{
 				confDirRoot:      path.Join([]string{"test-data", "dist"}...),
 				tempPathPrefix:   "./test-tmp/",
 				executionHandler: executionHandler,
+				myKeptn: myKeptn,
 			}
 
-			err = g.HandleTestTriggeredEvent(myKeptn, *incomingEvent, specificEvent)
+			err = g.HandleTestTriggeredEvent(*incomingEvent, specificEvent)
 			if err != nil && testCase.expectedResult != keptnv2.ResultFailed && err.Error() != testCase.expectedMessage {
 				t.Errorf("Unexpected Error: " + err.Error())
 			}

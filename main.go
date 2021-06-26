@@ -111,13 +111,14 @@ func processKeptnCloudEvent(ctx context.Context, event cloudevents.Event) error 
 		eventData := &keptnv2.TestTriggeredEventData{}
 		parseKeptnCloudEventPayload(event, eventData)
 
-		g := Gatling{
+		g := EventHandler{
 			confDirRoot: string(os.PathSeparator),
 			tempPathPrefix: "",
 			executionHandler: ScriptGatlingExecutionHandler,
+			myKeptn: myKeptn,
 		}
 
-		return g.HandleTestTriggeredEvent(myKeptn, event, eventData)
+		return g.HandleTestTriggeredEvent(event, eventData)
 	}
 
 	// Unknown Event -> Throw Error!

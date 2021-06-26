@@ -20,18 +20,19 @@ const (
 	ConfFilename   = "gatling.conf.yaml"
 )
 
-type Gatling struct {
+type EventHandler struct {
 	tempPathPrefix string
 	confDirRoot string
 	executionHandler GatlingExecutionHandler
+	myKeptn *keptnv2.Keptn
 }
 
 // HandleTestTriggeredEvent handles test.triggered events
-func (g *Gatling) HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.TestTriggeredEventData) error {
+func (e *EventHandler) HandleTestTriggeredEvent(incomingEvent cloudevents.Event, data *keptnv2.TestTriggeredEventData) error {
 	log.Infof("Handling test.triggered Event: %s", incomingEvent.Context.GetID())
 
 	// Send out a test.started CloudEvent
-	_, err := myKeptn.SendTaskStartedEvent(&keptnv2.EventData{}, ServiceName)
+	_, err := e.myKeptn.SendTaskStartedEvent(&keptnv2.EventData{}, ServiceName)
 	if err != nil {
 		log.Errorf("Failed to send task started CloudEvent (%s), aborting... \n", err.Error())
 		return err
@@ -42,36 +43,36 @@ func (g *Gatling) HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent
 
 	serviceURL, err := getServiceURL(data)
 	if err != nil {
-		return erroredTestsFinishedEvent(myKeptn, err)
+		return e.erroredTestsFinishedEvent(err)
 	}
 
 	// create a tempdir
-	tempDir, err := ioutil.TempDir(g.tempPathPrefix, ResourcePrefix)
+	tempDir, err := ioutil.TempDir(e.tempPathPrefix, ResourcePrefix)
 	if err != nil {
-		return erroredTestsFinishedEvent(myKeptn, err)
+		return e.erroredTestsFinishedEvent(err)
 	}
 
 	// cleanup afterwards
 	defer os.RemoveAll(tempDir)
 
-	downloaded, err := getAllGatlingResources(myKeptn, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), tempDir)
+	downloaded, err := getAllGatlingResources(e.myKeptn, e.myKeptn.Event.GetProject(), e.myKeptn.Event.GetStage(), e.myKeptn.Event.GetService(), tempDir)
 	if err != nil {
-		err = fmt.Errorf("error loading %s/* files for %s.%s.%s: %s", ResourcePrefix, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
-		return erroredTestsFinishedEvent(myKeptn, err)
+		err = fmt.Errorf("error loading %s/* files for %s.%s.%s: %s", ResourcePrefix, e.myKeptn.Event.GetProject(), e.myKeptn.Event.GetStage(), e.myKeptn.Event.GetService(), err.Error())
+		return e.erroredTestsFinishedEvent(err)
 	}
 
 	// skipping when no configuration is present
 	if downloaded == 0 {
-		return sendSuccessfulTestFinishedEvent(myKeptn, startTime, "skipped")
+		return e.sendSuccessfulTestFinishedEvent(startTime, "skipped")
 	}
 
-	err = restoreDefaultConfFiles(g.confDirRoot, tempDir)
+	err = restoreDefaultConfFiles(e.confDirRoot, tempDir)
 	if err != nil {
-		err = fmt.Errorf("error syncing default conf files for %s.%s.%s: %s", myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
-		return erroredTestsFinishedEvent(myKeptn, err)
+		err = fmt.Errorf("error syncing default conf files for %s.%s.%s: %s", e.myKeptn.Event.GetProject(), e.myKeptn.Event.GetStage(), e.myKeptn.Event.GetService(), err.Error())
+		return e.erroredTestsFinishedEvent(err)
 	}
 	var conf *GatlingConf
-	conf, err = getGatlingConf(myKeptn, myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService())
+	conf, err = getGatlingConf(e.myKeptn, e.myKeptn.Event.GetProject(), e.myKeptn.Event.GetStage(), e.myKeptn.Event.GetService())
 	if err != nil {
 		log.Warnf("Failed to load Configuration file: %s - proceeding with default values", err.Error())
 	}
@@ -89,19 +90,19 @@ func (g *Gatling) HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent
 	environment = append(environment, fmt.Sprintf("GATLING_HOME=%s", tempDir))
 	environment = append(environment, fmt.Sprintf("JAVA_OPTS=-DserviceURL=%s", serviceURL.String()))
 	log.Info("Running gatling tests")
-	str, err := g.executionHandler(command, environment)
+	str, err := e.executionHandler(command, environment)
 
 	log.Infof("Finished running gatling tests")
 	log.Infof(str)
 
 	if err != nil {
-		return erroredTestsFinishedEvent(myKeptn, err)
+		return e.erroredTestsFinishedEvent(err)
 	}
 
-	return sendSuccessfulTestFinishedEvent(myKeptn, startTime, "finished successfully")
+	return e.sendSuccessfulTestFinishedEvent(startTime, "finished successfully")
 }
 
-func sendSuccessfulTestFinishedEvent(myKeptn *keptnv2.Keptn, startTime time.Time, message string) error {
+func (e *EventHandler) sendSuccessfulTestFinishedEvent(startTime time.Time, message string) error {
 	endTime := time.Now()
 	finishedEvent := &keptnv2.TestFinishedEventData{
 		Test: keptnv2.TestFinishedDetails{
@@ -116,25 +117,25 @@ func sendSuccessfulTestFinishedEvent(myKeptn *keptnv2.Keptn, startTime time.Time
 	}
 
 	// Finally: send out a test.finished CloudEvent
-	_, err := myKeptn.SendTaskFinishedEvent(finishedEvent, ServiceName)
+	_, err := e.myKeptn.SendTaskFinishedEvent(finishedEvent, ServiceName)
 	if err != nil {
-		return erroredTestsFinishedEvent(myKeptn, err)
+		return e.erroredTestsFinishedEvent(err)
 	}
 	return nil
 }
 
-func erroredTestsFinishedEvent(myKeptn *keptnv2.Keptn, err error) error {
-	if eventErr := sendErroredTestsFinishedEvent(myKeptn, err); eventErr != nil {
+func (e *EventHandler) erroredTestsFinishedEvent(err error) error {
+	if eventErr := e.sendErroredTestsFinishedEvent(err); eventErr != nil {
 		log.Errorf(fmt.Sprintf("Error sending test finished event: %s", eventErr.Error()))
 	}
 	return err
 }
 
-func sendErroredTestsFinishedEvent(myKeptn *keptnv2.Keptn, err error) error {
+func  (e *EventHandler) sendErroredTestsFinishedEvent(err error) error {
 	// report error
 	log.Error(err)
 	// send out a test.finished failed CloudEvent
-	_, err = myKeptn.SendTaskFinishedEvent(&keptnv2.EventData{
+	_, err = e.myKeptn.SendTaskFinishedEvent(&keptnv2.EventData{
 		Status:  keptnv2.StatusErrored,
 		Result:  keptnv2.ResultFailed,
 		Message: err.Error(),
