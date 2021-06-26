@@ -1,0 +1,7 @@
+---
+spec_version: '0.1.0'
+workloads:
+  - teststrategy: some
+    simulation: PerformanceSimulation
+  - teststrategy: performance_light
+    simulation: PerformanceLightSimulation

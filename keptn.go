@@ -77,9 +77,7 @@ func getKeptnResource(myKeptn *keptnv2.Keptn, resourceName string, tempDir strin
 		return "", err
 	}
 
-	// Cut away folders from the sourcePath (if there are any)
-	sourcePathParts := strings.Split(resourceName, string(os.PathSeparator))
-	fullPathParts := append([]string{tempDir}, sourcePathParts[2:]...)
+	fullPathParts := append([]string{tempDir}, strings.TrimPrefix(resourceName, ResourcePrefix))
 	targetFileName := path.Join(fullPathParts...)
 	targetDirname := path.Dir(targetFileName)
 

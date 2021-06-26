@@ -1,13 +1,16 @@
 package main
 
 import (
+	b64 "encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/keptn/go-utils/pkg/lib/v0_2_0/fake"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 
@@ -39,26 +42,35 @@ func initializeTestObjects(configurationServiceURL string, eventFileName string)
 		ConfigurationServiceURL: configurationServiceURL,
 		EventSender:             &fake.EventSender{},
 	}
-	keptnOptions.UseLocalFileSystem = true
+	//keptnOptions.UseLocalFileSystem = true
 	myKeptn, err := keptnv2.NewKeptn(incomingEvent, keptnOptions)
 
 	return myKeptn, incomingEvent, err
 }
 
-func initializeTestServer(returnedResources keptnapimodels.Resources, returnedStatus int) *httptest.Server {
+func initializeTestServer(returnedResources keptnapimodels.Resources, sourcePath string) *httptest.Server {
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("Content-Type", "application/json")
-			log.Warnf("Request path %s", r.URL.Path)
+			log.Debugf("Request path %s", r.URL.Path)
 			if strings.HasSuffix(r.URL.Path, "/resource/") {
 				marshal, _ := json.Marshal(returnedResources)
 				_, _ = w.Write(marshal)
 				return
 			}
+			for _, resource := range returnedResources.Resources {
+				if strings.HasSuffix(r.URL.Path, *resource.ResourceURI) {
+					content, _ := ioutil.ReadFile(path.Join(sourcePath, *resource.ResourceURI))
+					resource.ResourceContent = b64.StdEncoding.EncodeToString(content)
+					marshal, _ := json.Marshal(resource)
+					_, _ = w.Write(marshal)
+					return
+				}
+			}
 
-			w.WriteHeader(returnedStatus)
+			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{
-	"code": ` + fmt.Sprintf("%d", returnedStatus) + `,
+	"code": ` + fmt.Sprintf("%d", http.StatusNotFound) + `,
 	"message": ""
 }`))
 		}),
@@ -83,31 +95,102 @@ func assetStartedAndFinishedEvents(t *testing.T, gotEvents int, myKeptn *keptnv2
 	}
 }
 
-func TestHandleTestTriggeredNoExecution(t *testing.T) {
+func TestHandleTestTriggeredEvent(t *testing.T) {
 	type test struct {
-		name            string
-		inputFile       string
-		resources       []*keptnapimodels.Resource
-		resourceStatus  int
-		expectedResult  keptnv2.ResultType
-		expectedMessage string
+		name               string
+		inputFile          string
+		resourceSourcePath string
+		resources          []*keptnapimodels.Resource
+		executionHandler   GatlingExecutionHandler
+		expectedResult     keptnv2.ResultType
+		expectedMessage    string
 	}
+	contentUriSimple := "gatling/user-files/simulations/SomeSimulation.scala"
+	contentUriWithConfig := "gatling/user-files/simulations/PerformanceSimulation.scala"
+	configUriWithConfig := "gatling/gatling.conf.yaml"
+
 	tests := []test{
 		{
 			"Skip if config is missing",
 			"test-events/test.triggered.json",
+			"test-data/simple/",
 			[]*keptnapimodels.Resource{},
-			http.StatusNotFound,
+			nil,
 			keptnv2.ResultPass,
 			"Gatling test skipped",
 		},
 		{
 			"Fail when deploymentUri is missing",
 			"test-events/test.triggered.no-uris.json",
+			"test-data/simple/",
 			[]*keptnapimodels.Resource{},
-			http.StatusNotFound,
+			nil,
 			keptnv2.ResultFailed,
 			"no deployment URI included in event",
+		},
+		{
+			"Fail if execution doesn't succeed",
+			"test-events/test.triggered.json",
+			"test-data/simple/",
+			[]*keptnapimodels.Resource{
+				{
+					ResourceURI: &contentUriSimple,
+				},
+			},
+			func(args []string, env []string) (string, error) {
+				return "", errors.New("execution failed")
+			},
+			keptnv2.ResultFailed,
+			"execution failed",
+		},
+		{
+			"Successful test run - simple",
+			"test-events/test.triggered.json",
+			"test-data/simple/",
+			[]*keptnapimodels.Resource{
+				{
+					ResourceURI: &contentUriSimple,
+				},
+			},
+			func(args []string, env []string) (string, error) {
+				if len(args) != 1 {
+					t.Errorf("Unexpected execution arguments")
+				}
+
+				if args[0] != "--simulation=SomeSimulation" {
+					t.Errorf("Unexpected simulation argument got %s", args[0])
+				}
+
+				return "", nil
+			},
+			keptnv2.ResultPass,
+			"Gatling test finished successfully",
+		},
+		{
+			"Successful test run - with config",
+			"test-events/test.triggered.json",
+			"test-data/with-configuration/",
+			[]*keptnapimodels.Resource{
+				{
+					ResourceURI: &contentUriWithConfig,
+				},
+				{
+					ResourceURI: &configUriWithConfig,
+				},
+			},
+			func(args []string, env []string) (string, error) {
+				if len(args) != 1 {
+					t.Errorf("Unexpected execution arguments")
+				}
+
+				if args[0] != "--simulation=PerformanceSimulation" {
+					t.Errorf("Unexpected simulation argument got %s", args[0])
+				}
+
+				return "", nil
+			},
+			keptnv2.ResultPass,
+			"Gatling test finished successfully",
 		},
 	}
 
@@ -116,7 +199,7 @@ func TestHandleTestTriggeredNoExecution(t *testing.T) {
 			returnedResources := keptnapimodels.Resources{
 				Resources: testCase.resources,
 			}
-			ts := initializeTestServer(returnedResources, testCase.resourceStatus)
+			ts := initializeTestServer(returnedResources, testCase.resourceSourcePath)
 			defer ts.Close()
 
 			myKeptn, incomingEvent, err := initializeTestObjects(ts.URL, testCase.inputFile)
@@ -135,8 +218,17 @@ func TestHandleTestTriggeredNoExecution(t *testing.T) {
 				t.Errorf("Unexpected execution call")
 				return "", nil
 			}
+			if testCase.executionHandler != nil {
+				executionHandler = testCase.executionHandler
+			}
 
-			err = HandleTestTriggeredEvent(myKeptn, executionHandler, *incomingEvent, specificEvent)
+			g := Gatling{
+				confDirRoot:      path.Join([]string{"test-data", "dist"}...),
+				tempPathPrefix:   "./test-tmp/",
+				executionHandler: executionHandler,
+			}
+
+			err = g.HandleTestTriggeredEvent(myKeptn, *incomingEvent, specificEvent)
 			if err != nil && testCase.expectedResult != keptnv2.ResultFailed && err.Error() != testCase.expectedMessage {
 				t.Errorf("Unexpected Error: " + err.Error())
 			}
@@ -157,62 +249,6 @@ func TestHandleTestTriggeredNoExecution(t *testing.T) {
 				t.Errorf("Expected message %s got: %s", testCase.expectedMessage, sentEvent.Message)
 			}
 		})
-	}
-}
-
-func TestHandleTestTriggeredEventSimpleTest(t *testing.T) {
-	contentUri := "test-data/gatling/user-files/simulations/SomeSimulation.scala"
-	returnedResources := keptnapimodels.Resources{
-		Resources: []*keptnapimodels.Resource{
-			{
-				ResourceContent: "empty",
-				ResourceURI:     &contentUri,
-			},
-		},
-	}
-	ts := initializeTestServer(returnedResources, http.StatusOK)
-	defer ts.Close()
-
-	myKeptn, incomingEvent, err := initializeTestObjects(ts.URL, "test-events/test.triggered.json")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	specificEvent := &keptnv2.TestTriggeredEventData{}
-	err = incomingEvent.DataAs(specificEvent)
-	if err != nil {
-		t.Errorf("Error getting keptn event data")
-	}
-
-	executionHandler := func(args []string, env []string) (string, error) {
-		if len(args) != 1 {
-			t.Errorf("Unexpected execution arguments")
-		}
-
-		if args[0] != "--simulation=SomeSimulation" {
-			t.Errorf("Unexpected simulation argument got %s", args[0])
-		}
-
-		return "", nil
-	}
-
-	err = HandleTestTriggeredEvent(myKeptn, executionHandler, *incomingEvent, specificEvent)
-	if err != nil {
-		t.Errorf("Error: " + err.Error())
-	}
-
-	gotEvents := len(myKeptn.EventSender.(*fake.EventSender).SentEvents)
-
-	assetStartedAndFinishedEvents(t, gotEvents, myKeptn)
-
-	sentEvent := &keptnv2.TestTriggeredEventData{}
-	err = myKeptn.EventSender.(*fake.EventSender).SentEvents[1].DataAs(sentEvent)
-	if err != nil {
-		t.Errorf("Error getting keptn event data")
-	}
-	if sentEvent.Message != "Gatling test finished successfully" {
-		t.Errorf("Expected successful test got: %s", sentEvent.Message)
 	}
 }
 

@@ -20,8 +20,14 @@ const (
 	ConfFilename   = "gatling.conf.yaml"
 )
 
+type Gatling struct {
+	tempPathPrefix string
+	confDirRoot string
+	executionHandler GatlingExecutionHandler
+}
+
 // HandleTestTriggeredEvent handles test.triggered events
-func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, executionHandler GatlingExecutionHandler, incomingEvent cloudevents.Event, data *keptnv2.TestTriggeredEventData) error {
+func (g *Gatling) HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, incomingEvent cloudevents.Event, data *keptnv2.TestTriggeredEventData) error {
 	log.Infof("Handling test.triggered Event: %s", incomingEvent.Context.GetID())
 
 	// Send out a test.started CloudEvent
@@ -39,13 +45,8 @@ func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, executionHandler GatlingEx
 		return erroredTestsFinishedEvent(myKeptn, err)
 	}
 
-	tempDirPrefix := ""
-	if myKeptn.UseLocalFileSystem {
-		tempDirPrefix = "./test-tmp/"
-	}
-
 	// create a tempdir
-	tempDir, err := ioutil.TempDir(tempDirPrefix, ResourcePrefix)
+	tempDir, err := ioutil.TempDir(g.tempPathPrefix, ResourcePrefix)
 	if err != nil {
 		return erroredTestsFinishedEvent(myKeptn, err)
 	}
@@ -64,12 +65,7 @@ func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, executionHandler GatlingEx
 		return sendSuccessfulTestFinishedEvent(myKeptn, startTime, "skipped")
 	}
 
-	defaultConfRootDir := string(os.PathSeparator)
-	if myKeptn.UseLocalFileSystem {
-		defaultConfRootDir = "test-data"
-	}
-
-	err = restoreDefaultConfFiles(defaultConfRootDir, tempDir)
+	err = restoreDefaultConfFiles(g.confDirRoot, tempDir)
 	if err != nil {
 		err = fmt.Errorf("error syncing default conf files for %s.%s.%s: %s", myKeptn.Event.GetProject(), myKeptn.Event.GetStage(), myKeptn.Event.GetService(), err.Error())
 		return erroredTestsFinishedEvent(myKeptn, err)
@@ -93,7 +89,7 @@ func HandleTestTriggeredEvent(myKeptn *keptnv2.Keptn, executionHandler GatlingEx
 	environment = append(environment, fmt.Sprintf("GATLING_HOME=%s", tempDir))
 	environment = append(environment, fmt.Sprintf("JAVA_OPTS=-DserviceURL=%s", serviceURL.String()))
 	log.Info("Running gatling tests")
-	str, err := executionHandler(command, environment)
+	str, err := g.executionHandler(command, environment)
 
 	log.Infof("Finished running gatling tests")
 	log.Infof(str)
