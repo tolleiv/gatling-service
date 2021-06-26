@@ -90,4 +90,3 @@ type GatlingExecutionHandler func(args []string, env []string) (string, error)
 func ScriptGatlingExecutionHandler(args []string, env []string) (string, error) {
 	return ExecuteCommandWithEnv("gatling.sh", args, env)
 }
-

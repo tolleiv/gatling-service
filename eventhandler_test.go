@@ -37,7 +37,7 @@ func initializeTestObjects(configurationServiceURL string, eventFileName string)
 	// Add a Fake EventSender to KeptnOptions
 	var keptnOptions = keptn.KeptnOpts{
 		ConfigurationServiceURL: configurationServiceURL,
-		EventSender: &fake.EventSender{},
+		EventSender:             &fake.EventSender{},
 	}
 	keptnOptions.UseLocalFileSystem = true
 	myKeptn, err := keptnv2.NewKeptn(incomingEvent, keptnOptions)
@@ -52,12 +52,12 @@ func initializeTestServer(returnedResources keptnapimodels.Resources, returnedSt
 			log.Warnf("Request path %s", r.URL.Path)
 			if strings.HasSuffix(r.URL.Path, "/resource/") {
 				marshal, _ := json.Marshal(returnedResources)
-				w.Write(marshal)
+				_, _ = w.Write(marshal)
 				return
 			}
 
 			w.WriteHeader(returnedStatus)
-			w.Write([]byte(`{
+			_, _ = w.Write([]byte(`{
 	"code": ` + fmt.Sprintf("%d", returnedStatus) + `,
 	"message": ""
 }`))
@@ -66,38 +66,7 @@ func initializeTestServer(returnedResources keptnapimodels.Resources, returnedSt
 	return ts
 }
 
-func TestHandleTestTriggeredEventSkipIfConfigMissing(t *testing.T) {
-
-	returnedResources := keptnapimodels.Resources{
-		Resources: []*keptnapimodels.Resource{},
-	}
-	ts := initializeTestServer(returnedResources, http.StatusNotFound)
-	defer ts.Close()
-
-	myKeptn, incomingEvent, err := initializeTestObjects(ts.URL,"test-events/test.triggered.json")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	specificEvent := &keptnv2.TestTriggeredEventData{}
-	err = incomingEvent.DataAs(specificEvent)
-	if err != nil {
-		t.Errorf("Error getting keptn event data")
-	}
-
-	executionHandler := func (args []string, env []string) (string, error) {
-		t.Errorf("Unexpected execution call")
-		return "", nil
-	}
-
-	err = HandleTestTriggeredEvent(myKeptn, executionHandler, *incomingEvent, specificEvent)
-	if err != nil {
-		t.Errorf("Error: " + err.Error())
-	}
-
-	gotEvents := len(myKeptn.EventSender.(*fake.EventSender).SentEvents)
-
+func assetStartedAndFinishedEvents(t *testing.T, gotEvents int, myKeptn *keptnv2.Keptn) {
 	// Verify that HandleTestTriggeredEvent has sent 2 cloudevents
 	if gotEvents != 2 {
 		t.Errorf("Expected two events to be sent, but got %v", gotEvents)
@@ -111,75 +80,83 @@ func TestHandleTestTriggeredEventSkipIfConfigMissing(t *testing.T) {
 	// Verify that the second CE sent is a .finished event
 	if keptnv2.GetFinishedEventType(keptnv2.TestTaskName) != myKeptn.EventSender.(*fake.EventSender).SentEvents[1].Type() {
 		t.Errorf("Expected a test.finished event type")
-	}
-
-	sentEvent := &keptnv2.TestTriggeredEventData{}
-	err = myKeptn.EventSender.(*fake.EventSender).SentEvents[1].DataAs(sentEvent)
-	if err != nil {
-		t.Errorf("Error getting keptn event data")
-	}
-	if sentEvent.Message != "Gatling test skipped" {
-		t.Errorf("Expected skipped test got: %s", sentEvent.Message)
 	}
 }
 
-func TestHandleTestTriggeredEventFailures(t *testing.T) {
-
-	returnedResources := keptnapimodels.Resources{
-		Resources: []*keptnapimodels.Resource{},
+func TestHandleTestTriggeredNoExecution(t *testing.T) {
+	type test struct {
+		name            string
+		inputFile       string
+		resources       []*keptnapimodels.Resource
+		resourceStatus  int
+		expectedResult  keptnv2.ResultType
+		expectedMessage string
 	}
-	ts := initializeTestServer(returnedResources, http.StatusNotFound)
-	defer ts.Close()
-
-	myKeptn, incomingEvent, err := initializeTestObjects(ts.URL,"test-events/test.triggered.no-uris.json")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	specificEvent := &keptnv2.TestTriggeredEventData{}
-	err = incomingEvent.DataAs(specificEvent)
-	if err != nil {
-		t.Errorf("Error getting keptn event data")
-	}
-
-	executionHandler := func (args []string, env []string) (string, error) {
-		t.Errorf("Unexpected execution call")
-		return "", nil
-	}
-
-	err = HandleTestTriggeredEvent(myKeptn, executionHandler, *incomingEvent, specificEvent)
-	if err != nil && err.Error() != "no deployment URI included in event" {
-		t.Errorf("Unexpected Error: " + err.Error())
+	tests := []test{
+		{
+			"Skip if config is missing",
+			"test-events/test.triggered.json",
+			[]*keptnapimodels.Resource{},
+			http.StatusNotFound,
+			keptnv2.ResultPass,
+			"Gatling test skipped",
+		},
+		{
+			"Fail when deploymentUri is missing",
+			"test-events/test.triggered.no-uris.json",
+			[]*keptnapimodels.Resource{},
+			http.StatusNotFound,
+			keptnv2.ResultFailed,
+			"no deployment URI included in event",
+		},
 	}
 
-	gotEvents := len(myKeptn.EventSender.(*fake.EventSender).SentEvents)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			returnedResources := keptnapimodels.Resources{
+				Resources: testCase.resources,
+			}
+			ts := initializeTestServer(returnedResources, testCase.resourceStatus)
+			defer ts.Close()
 
-	// Verify that HandleTestTriggeredEvent has sent 2 cloudevents
-	if gotEvents != 2 {
-		t.Errorf("Expected two events to be sent, but got %v", gotEvents)
-	}
+			myKeptn, incomingEvent, err := initializeTestObjects(ts.URL, testCase.inputFile)
+			if err != nil {
+				t.Error(err)
+				return
+			}
 
-	// Verify that the first CE sent is a .started event
-	if keptnv2.GetStartedEventType(keptnv2.TestTaskName) != myKeptn.EventSender.(*fake.EventSender).SentEvents[0].Type() {
-		t.Errorf("Expected a test.started event type")
-	}
+			specificEvent := &keptnv2.TestTriggeredEventData{}
+			if err = incomingEvent.DataAs(specificEvent); err != nil {
+				t.Error(err)
+				return
+			}
 
-	// Verify that the second CE sent is a .finished event
-	if keptnv2.GetFinishedEventType(keptnv2.TestTaskName) != myKeptn.EventSender.(*fake.EventSender).SentEvents[1].Type() {
-		t.Errorf("Expected a test.finished event type")
-	}
+			executionHandler := func(args []string, env []string) (string, error) {
+				t.Errorf("Unexpected execution call")
+				return "", nil
+			}
 
-	sentEvent := &keptnv2.TestTriggeredEventData{}
-	err = myKeptn.EventSender.(*fake.EventSender).SentEvents[1].DataAs(sentEvent)
-	if err != nil {
-		t.Errorf("Error getting keptn event data")
-	}
-	if sentEvent.Result != keptnv2.ResultFailed {
-		t.Errorf("Expected failed event")
-	}
-	if sentEvent.Message != "no deployment URI included in event" {
-		t.Errorf("Expected skipped test got: %s", sentEvent.Message)
+			err = HandleTestTriggeredEvent(myKeptn, executionHandler, *incomingEvent, specificEvent)
+			if err != nil && testCase.expectedResult != keptnv2.ResultFailed && err.Error() != testCase.expectedMessage {
+				t.Errorf("Unexpected Error: " + err.Error())
+			}
+
+			gotEvents := len(myKeptn.EventSender.(*fake.EventSender).SentEvents)
+
+			assetStartedAndFinishedEvents(t, gotEvents, myKeptn)
+
+			sentEvent := &keptnv2.TestTriggeredEventData{}
+			if err = myKeptn.EventSender.(*fake.EventSender).SentEvents[1].DataAs(sentEvent); err != nil {
+				t.Errorf("Error getting keptn event data")
+				return
+			}
+			if sentEvent.Result != testCase.expectedResult {
+				t.Errorf("Expected event result %s got: %s", testCase.expectedResult, sentEvent.Result)
+			}
+			if sentEvent.Message != testCase.expectedMessage {
+				t.Errorf("Expected message %s got: %s", testCase.expectedMessage, sentEvent.Message)
+			}
+		})
 	}
 }
 
@@ -227,20 +204,7 @@ func TestHandleTestTriggeredEventSimpleTest(t *testing.T) {
 
 	gotEvents := len(myKeptn.EventSender.(*fake.EventSender).SentEvents)
 
-	// Verify that HandleTestTriggeredEvent has sent 2 cloudevents
-	if gotEvents != 2 {
-		t.Errorf("Expected two events to be sent, but got %v", gotEvents)
-	}
-
-	// Verify that the first CE sent is a .started event
-	if keptnv2.GetStartedEventType(keptnv2.TestTaskName) != myKeptn.EventSender.(*fake.EventSender).SentEvents[0].Type() {
-		t.Errorf("Expected a test.started event type")
-	}
-
-	// Verify that the second CE sent is a .finished event
-	if keptnv2.GetFinishedEventType(keptnv2.TestTaskName) != myKeptn.EventSender.(*fake.EventSender).SentEvents[1].Type() {
-		t.Errorf("Expected a test.finished event type")
-	}
+	assetStartedAndFinishedEvents(t, gotEvents, myKeptn)
 
 	sentEvent := &keptnv2.TestTriggeredEventData{}
 	err = myKeptn.EventSender.(*fake.EventSender).SentEvents[1].DataAs(sentEvent)
