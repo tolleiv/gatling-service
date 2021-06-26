@@ -45,10 +45,7 @@ func initializeTestObjects(configurationServiceURL string, eventFileName string)
 	return myKeptn, incomingEvent, err
 }
 
-func TestHandleTestTriggeredEventSkipIfConfigMissing(t *testing.T) {
-	var returnedStatus int
-	var returnedResources keptnapimodels.Resources
-
+func initializeTestServer(returnedResources keptnapimodels.Resources, returnedStatus int) *httptest.Server {
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("Content-Type", "application/json")
@@ -66,13 +63,16 @@ func TestHandleTestTriggeredEventSkipIfConfigMissing(t *testing.T) {
 }`))
 		}),
 	)
-	defer ts.Close()
+	return ts
+}
 
-	returnedStatus = 200
+func TestHandleTestTriggeredEventSkipIfConfigMissing(t *testing.T) {
 
-	returnedResources = keptnapimodels.Resources{
+	returnedResources := keptnapimodels.Resources{
 		Resources: []*keptnapimodels.Resource{},
 	}
+	ts := initializeTestServer(returnedResources, http.StatusNotFound)
+	defer ts.Close()
 
 	myKeptn, incomingEvent, err := initializeTestObjects(ts.URL,"test-events/test.triggered.json")
 	if err != nil {
@@ -123,43 +123,15 @@ func TestHandleTestTriggeredEventSkipIfConfigMissing(t *testing.T) {
 	}
 }
 
-func TestHandleTestTriggeredEventSimpleTest(t *testing.T) {
-	var returnedStatus int
-	var returnedResources keptnapimodels.Resources
+func TestHandleTestTriggeredEventFailures(t *testing.T) {
 
-	ts := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Add("Content-Type", "application/json")
-			log.Warnf("Request path %s", r.URL.Path)
-			if strings.HasSuffix(r.URL.Path, "/resource/") {
-				marshal, _ := json.Marshal(returnedResources)
-				w.Write(marshal)
-				return
-			}
-
-			w.WriteHeader(returnedStatus)
-			w.Write([]byte(`{
-	"code": ` + fmt.Sprintf("%d", returnedStatus) + `,
-	"message": ""
-}`))
-		}),
-	)
+	returnedResources := keptnapimodels.Resources{
+		Resources: []*keptnapimodels.Resource{},
+	}
+	ts := initializeTestServer(returnedResources, http.StatusNotFound)
 	defer ts.Close()
 
-	returnedStatus = 404
-
-	contentUri := "test-data/gatling/user-files/simulations/SomeSimulation.scala"
-
-	returnedResources = keptnapimodels.Resources{
-		Resources: []*keptnapimodels.Resource{
-			{
-				ResourceContent: "empty",
-				ResourceURI:    &contentUri,
-			},
-		},
-	}
-
-	myKeptn, incomingEvent, err := initializeTestObjects(ts.URL,"test-events/test.triggered.json")
+	myKeptn, incomingEvent, err := initializeTestObjects(ts.URL,"test-events/test.triggered.no-uris.json")
 	if err != nil {
 		t.Error(err)
 		return
@@ -172,6 +144,71 @@ func TestHandleTestTriggeredEventSimpleTest(t *testing.T) {
 	}
 
 	executionHandler := func (args []string, env []string) (string, error) {
+		t.Errorf("Unexpected execution call")
+		return "", nil
+	}
+
+	err = HandleTestTriggeredEvent(myKeptn, executionHandler, *incomingEvent, specificEvent)
+	if err != nil && err.Error() != "no deployment URI included in event" {
+		t.Errorf("Unexpected Error: " + err.Error())
+	}
+
+	gotEvents := len(myKeptn.EventSender.(*fake.EventSender).SentEvents)
+
+	// Verify that HandleTestTriggeredEvent has sent 2 cloudevents
+	if gotEvents != 2 {
+		t.Errorf("Expected two events to be sent, but got %v", gotEvents)
+	}
+
+	// Verify that the first CE sent is a .started event
+	if keptnv2.GetStartedEventType(keptnv2.TestTaskName) != myKeptn.EventSender.(*fake.EventSender).SentEvents[0].Type() {
+		t.Errorf("Expected a test.started event type")
+	}
+
+	// Verify that the second CE sent is a .finished event
+	if keptnv2.GetFinishedEventType(keptnv2.TestTaskName) != myKeptn.EventSender.(*fake.EventSender).SentEvents[1].Type() {
+		t.Errorf("Expected a test.finished event type")
+	}
+
+	sentEvent := &keptnv2.TestTriggeredEventData{}
+	err = myKeptn.EventSender.(*fake.EventSender).SentEvents[1].DataAs(sentEvent)
+	if err != nil {
+		t.Errorf("Error getting keptn event data")
+	}
+	if sentEvent.Result != keptnv2.ResultFailed {
+		t.Errorf("Expected failed event")
+	}
+	if sentEvent.Message != "no deployment URI included in event" {
+		t.Errorf("Expected skipped test got: %s", sentEvent.Message)
+	}
+}
+
+func TestHandleTestTriggeredEventSimpleTest(t *testing.T) {
+	contentUri := "test-data/gatling/user-files/simulations/SomeSimulation.scala"
+	returnedResources := keptnapimodels.Resources{
+		Resources: []*keptnapimodels.Resource{
+			{
+				ResourceContent: "empty",
+				ResourceURI:     &contentUri,
+			},
+		},
+	}
+	ts := initializeTestServer(returnedResources, http.StatusOK)
+	defer ts.Close()
+
+	myKeptn, incomingEvent, err := initializeTestObjects(ts.URL, "test-events/test.triggered.json")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	specificEvent := &keptnv2.TestTriggeredEventData{}
+	err = incomingEvent.DataAs(specificEvent)
+	if err != nil {
+		t.Errorf("Error getting keptn event data")
+	}
+
+	executionHandler := func(args []string, env []string) (string, error) {
 		if len(args) != 1 {
 			t.Errorf("Unexpected execution arguments")
 		}

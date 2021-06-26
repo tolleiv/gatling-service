@@ -10,10 +10,8 @@
         "canary"
       ],
       "deploymentURIsLocal": [
-        "http://helloservice.pod-tato-head-hardening:80"
       ],
       "deploymentURIsPublic": [
-        "http://helloservice.some.host:80"
       ],
       "deploymentstrategy": "duplicate",
       "gitCommit": "a6a97648be5668a7e01d14a0c41b50d5f317db76"
