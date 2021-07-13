@@ -10,7 +10,7 @@ This implements a gatling-service for Keptn. If you want to learn more about Kep
 
 | Keptn Version    | [gatling-service Docker Image](https://hub.docker.com/r/keptnsandbox/gatling-service/tags) |
 |:----------------:|:----------------------------------------:|
-|       0.8.x      | tolleiv/gatling-service:0.1.2 |
+|       0.8.x      | tolleiv/gatling-service:0.2.0 |
 
 ## Installation
 

@@ -18,11 +18,11 @@ spec:
         app.kubernetes.io/instance: keptn
         app.kubernetes.io/part-of: keptn
         app.kubernetes.io/component: execution-plane
-        app.kubernetes.io/version: 0.1.2
+        app.kubernetes.io/version: 0.2.0
     spec:
       containers:
         - name: gatling-service
-          image: tolleiv/gatling-service:0.1.2
+          image: tolleiv/gatling-service:0.2.0
           ports:
             - containerPort: 8080
           env:
