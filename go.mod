@@ -3,7 +3,7 @@ module tolleiv/gatling-service
 go 1.16
 
 require (
-	github.com/cloudevents/sdk-go/v2 v2.5.0
+	github.com/cloudevents/sdk-go/v2 v2.6.1
 	github.com/iancoleman/strcase v0.2.0
 	github.com/json-iterator/go v1.1.11 // indirect
 	github.com/kelseyhightower/envconfig v1.4.0
